@@ -606,14 +606,28 @@ public class ImportExportTests extends AbstractIntegrationTests {
                     action a1;
                     action a2;
                     action a3;
-                    then d1;
-                    decide d1;
+                    then decide d1;
                     succession sd1 first d1 if x < 0 then a1;
                     succession sd2 first d1 if x == 0 then a2;
                     succession sd3 first d1 then a3;
                 }""";
         this.checker.textToImport(input)
                 .expectedResult(expected)
+                .check();
+    }
+
+    @Test
+    @DisplayName("GIVEN a model with successions with implicit targets, WHEN importing and exporting the model, THEN the following members are inlined after then")
+    public void checkSuccessionWithImplicitTargets() throws IOException {
+        var input = """
+                action def A2 {
+                    action a1;
+                    then decide;
+                    then merge;
+                    then action a3;
+                }""";
+        this.checker.textToImport(input)
+                .expectedResult(input)
                 .check();
     }
 
@@ -704,17 +718,15 @@ public class ImportExportTests extends AbstractIntegrationTests {
          * Here we have differences here because :
          *
          * <ul>
-         * <li>The construction of SuccessionAsUsage defining new ActionUsage is hard to detect so we chose to use the
-         * complete syntax "first source then target;"</li>
+         * <li>A succession whose implicit target is the following member is exported by inlining that member after the
+         * then keyword</li>
          * <ul>
          */
         var expected = """
                 action def ActionDef1 {
                     action a0;
-                    then a1;
-                    action a1;
-                    then a2;
-                    action a2;
+                    then action a1;
+                    then action a2;
                 }""";
 
         this.checker.textToImport(input)
@@ -743,6 +755,28 @@ public class ImportExportTests extends AbstractIntegrationTests {
                 action def ActionDef1 {
                     action a2;
                     first start then a2;
+                }""";
+
+        this.checker.textToImport(input)
+                .expectedResult(expected)
+                .check();
+    }
+
+    @Test
+    @DisplayName("GIVEN a SuccessionAsUsage with an explicit start source and implicit targets on the following actions, WHEN importing and exporting the model, THEN the following actions are referenced by name, not inlined.")
+    public void checkSuccessionExplicitStartThenDefinedActions() throws IOException {
+        var input = """
+                action def ActionDef1 {
+                    first start;
+                    then action a1;
+                    then action a2;
+                }""";
+
+        var expected = """
+                action def ActionDef1 {
+                    first start then a1;
+                    action a1;
+                    then action a2;
                 }""";
 
         this.checker.textToImport(input)
@@ -1443,6 +1477,35 @@ public class ImportExportTests extends AbstractIntegrationTests {
     }
 
     @Test
+    @DisplayName("GIVEN a model with SatisfyRequirementUsage with and without a subject, WHEN importing and exporting the model, THEN no dangling by is exported")
+    public void checkSatisfyRequirementUsageWithoutSubject() throws IOException {
+        var input = """
+                package P {
+                    requirement def RD;
+                    requirement r1 : RD;
+                    part p1;
+                    part p2 {
+                        satisfy r1;
+                        satisfy r1 by p1;
+                    }
+                }""";
+        // The strict BNF form of the SatisfyRequirementUsage forces the use of the "assert" keyword
+        var expected = """
+                package P {
+                    requirement def RD;
+                    requirement r1 : RD;
+                    part p1;
+                    part p2 {
+                        assert satisfy r1;
+                        assert satisfy r1 by p1;
+                    }
+                }""";
+        this.checker.textToImport(input)
+                .expectedResult(expected)
+                .check();
+    }
+
+    @Test
     @DisplayName("GIVEN a model with ConnectionUsage, WHEN importing and exporting the model, THEN the ConnectionUsage should be exported properly")
     public void checkConnectionUsage() throws IOException {
         var input = """
@@ -1491,6 +1554,34 @@ public class ImportExportTests extends AbstractIntegrationTests {
                 }""";
         this.checker.textToImport(input)
                 .expectedResult(input)
+                .check();
+    }
+
+    @Test
+    @DisplayName("GIVEN a model with an InterfaceUsage whose end is a feature chain, WHEN importing and exporting the model, THEN the InterfaceUsage should be exported properly")
+    public void checkInterfaceUsageWithChainedEnd() throws IOException {
+        var input = """
+                package P {
+                    port def PI;
+                    part def PD { port p : PI; }
+                    part a { part b : PD; }
+                    part c : PD;
+                    interface i connect a.b.p to c.p;
+                }""";
+        var expected = """
+                package P {
+                    port def PI;
+                    part def PD {
+                        port p : PI;
+                    }
+                    part a {
+                        part b : PD;
+                    }
+                    part c : PD;
+                    interface i connect a.b.p to c.p;
+                }""";
+        this.checker.textToImport(input)
+                .expectedResult(expected)
                 .check();
     }
 
